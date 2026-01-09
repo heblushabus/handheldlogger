@@ -1,0 +1,331 @@
+### 1. Initialization & Versioning
+
+#### `bsec_init`
+
+* **Signature:** `bsec_library_return_t bsec_init(void)`
+* **Description:** Initializes the library, sets up relations between internal modules, and resets configurations/states to defaults.
+* **Implementation Details:**
+* 
+**Call Context:** Must be called before any other BSEC function.
+
+
+* 
+**Memory:** Initializes run-time dependent library states.
+
+
+* 
+**Return:** Zero (0) on success, otherwise an error code.
+
+
+
+
+
+#### `bsec_get_version`
+
+* **Signature:** `bsec_library_return_t bsec_get_version(bsec_version_t *bsec_version_p)`
+* **Description:** Retrieves the current library version.
+* **Technical Details:**
+* Populates a `bsec_version_t` struct containing `major`, `minor`, `major_bugfix`, and `minor_bugfix` (all `uint8_t`).
+
+
+* **Critical Note:** Configuration and state strings are version-locked. Strings generated for one version will not be accepted by other versions.
+
+
+
+
+
+---
+
+### 2. Configuration & State Management
+
+These functions allow saving/loading the algorithm's "brain" (state) and "settings" (configuration strings).
+
+#### `bsec_set_configuration`
+
+* **Signature:** `bsec_library_return_t bsec_set_configuration(const uint8_t *const serialized_settings, const uint32_t n_serialized_settings, uint8_t *work_buffer, const uint32_t n_work_buffer_size)`
+* 
+**Description:** Updates algorithm parameters using a configuration string (e.g., for different supply voltages or sensor boards).
+
+
+* **Implementation Details:**
+* 
+**Work Buffer:** Requires a temporary work buffer provided by the caller to decompose the serialization.
+
+
+* 
+**Buffer Size:** `n_work_buffer_size` must be at least `BSEC_MAX_PROPERTY_BLOB_SIZE` (1943 bytes).
+
+
+* **Optional:** This is an optional step; BSEC runs with defaults if not called.
+
+
+
+
+
+#### `bsec_get_configuration`
+
+* **Signature:** `bsec_library_return_t bsec_get_configuration(const uint8_t config_id, uint8_t *serialized_settings, const uint32_t n_serialized_settings_max, uint8_t *work_buffer, const uint32_t n_work_buffer, uint32_t *n_serialized_settings)`
+* 
+**Description:** Retrieves the current configuration as a binary blob.
+
+
+* **Implementation Details:**
+* 
+**Usage:** Intended primarily for debugging purposes.
+
+
+* 
+**Memory:** Requires `serialized_settings` buffer of size `BSEC_MAX_PROPERTY_BLOB_SIZE` and a work buffer of size `BSEC_MAX_WORKBUFFER_SIZE` (4096 bytes).
+
+
+
+
+
+#### `bsec_set_state`
+
+* **Signature:** `bsec_library_return_t bsec_set_state(const uint8_t *const serialized_state, const uint32_t n_serialized_state, uint8_t *work_buffer, const uint32_t n_work_buffer_size)`
+* 
+**Description:** Restores the internal state (e.g., calibration history) from a previous session.
+
+
+* **Implementation Details:**
+* 
+**Importance:** Essential for gas sensor performance (background calibration persistence) across power cycles.
+
+
+* 
+**Buffer Size:** Requires a work buffer of size `BSEC_MAX_STATE_BLOB_SIZE` (238 bytes).
+
+
+
+
+
+#### `bsec_get_state`
+
+* **Signature:** `bsec_library_return_t bsec_get_state(const uint8_t state_set_id, uint8_t *serialized_state, const uint32_t n_serialized_state_max, uint8_t *work_buffer, const uint32_t n_work_buffer, uint32_t *n_serialized_state)`
+* 
+**Description:** Retrieves the current internal states (e.g., calibration status) to be stored in non-volatile memory.
+
+
+* **Implementation Details:**
+* 
+**Usage:** Should be called before shutting down or periodically to save calibration progress.
+
+
+* 
+**Buffer Size:** Output buffer must handle `BSEC_MAX_STATE_BLOB_SIZE`.
+
+
+
+
+
+---
+
+### 3. Workflow & Processing (The Core Loop)
+
+#### `bsec_update_subscription`
+
+* **Signature:** `bsec_library_return_t bsec_update_subscription(const bsec_sensor_configuration_t *const requested_virtual_sensors, const uint8_t n_requested_virtual_sensors, bsec_sensor_configuration_t *required_sensor_settings, uint8_t *n_required_sensor_settings)`
+* 
+**Description:** Instructs BSEC which virtual outputs (e.g., IAQ, CO2) are required and at what sample rates.
+
+
+* **Implementation Details:**
+* **Inputs:** Array of `bsec_sensor_configuration_t` containing `sensor_id` (virtual) and `sample_rate`.
+* 
+**Outputs:** Returns an array of `required_sensor_settings` (physical sensors) that the external app must measure to fulfill the request.
+
+
+* 
+**Disabling:** To disable a sensor, set sample rate to `BSEC_SAMPLE_RATE_DISABLED` (65535.0f).
+
+
+* 
+**Persistence:** Subscribed outputs are retained; subsequent calls are differential updates.
+
+
+
+
+
+#### `bsec_sensor_control`
+
+* **Signature:** `bsec_library_return_t bsec_sensor_control(const int64_t time_stamp, bsec_bme_settings_t *sensor_settings)`
+* 
+**Description:** Determines exactly how the BME sensor should be configured for the *next* measurement point based on the active subscriptions.
+
+
+* **Implementation Details:**
+* 
+**Input:** Current timestamp in **nanoseconds**.
+
+
+* **Output:** `bsec_bme_settings_t` struct containing:
+* 
+`trigger_measurement`: 1 if a measurement is required now, 0 if the system should sleep.
+
+
+* 
+`next_call`: The specific timestamp (ns) when this function must be called again.
+
+
+* 
+`heater_temperature` & `heater_duration`: Settings for the gas sensor heater.
+
+
+* 
+`op_mode`: Operation mode (Sleep/Forced/Parallel).
+
+
+
+
+* **Timing Criticality:** The difference between the actual call time and the requested `next_call` time must be within **6.25% jitter**. Violating this may result in `BSEC_W_SC_CALL_TIMING_VIOLATION`.
+
+
+
+
+
+#### `bsec_do_steps`
+
+* **Signature:** `bsec_library_return_t bsec_do_steps(const bsec_input_t *const inputs, const uint8_t n_inputs, bsec_output_t *outputs, uint8_t *n_outputs)`
+* **Description:** The main processing function. Takes raw sensor data and computes virtual sensor outputs.
+
+
+* **Implementation Details:**
+* **Inputs:** Array of `bsec_input_t` structs (sensor ID, signal value, timestamp in ns).
+* **Outputs:** Array of `bsec_output_t` structs (virtual sensor ID, value, accuracy, timestamp).
+* 
+**Constraint 1:** All inputs must have the **same timestamp** (aligned).
+
+
+* **Constraint 2:** Timestamps must be non-repeating and strictly increasing. Duplicate timestamps trigger warnings.
+
+
+* 
+**Memory:** `n_outputs` must specify the size of the allocated output array; it is updated by the function to reflect the actual number of outputs returned.
+
+
+
+
+
+#### `bsec_reset_output`
+
+* **Signature:** `bsec_library_return_t bsec_reset_output(uint8_t sensor_id)`
+* 
+**Description:** Resets the internal status of a specific virtual sensor.
+
+
+* **Implementation Details:**
+* For `BSEC_OUTPUT_IAQ`, this zeroes the output to current ambient conditions (deletes history for that specific output).
+
+
+
+
+
+---
+
+### 4. Multi-Instance Interfaces (`_m`)
+
+Used when connecting multiple BME sensors to a single microcontroller. Each function mirrors the standard interface but requires an instance memory pointer.
+
+* **Instance Size Helper:** `size_t bsec_get_instance_size_m(void)`
+* Returns the size in bytes required for the BSEC instance struct.
+
+
+
+
+* **Lifecycle:**
+* 
+`bsec_init_m(void *inst)`.
+
+
+
+
+* **Processing:**
+* 
+`bsec_update_subscription_m(void *inst, ...)`.
+
+
+* 
+`bsec_sensor_control_m(void *inst, ...)`.
+
+
+* 
+`bsec_do_steps_m(void *inst, ...)`.
+
+
+
+
+* **State/Config:**
+* 
+`bsec_set_configuration_m` / `bsec_get_configuration_m`.
+
+
+* 
+`bsec_set_state_m` / `bsec_get_state_m`.
+
+
+* 
+`bsec_get_version_m`.
+
+
+* 
+`bsec_reset_output_m`.
+
+
+
+
+
+### Technical Constants Summary
+
+* 
+**Timestamps:** Always `int64_t` in **nanoseconds**.
+
+
+* 
+**Work Buffer Max Size:** 4096 bytes (`BSEC_MAX_WORKBUFFER_SIZE`).
+
+
+* 
+**Config Blob Max Size:** 1943 bytes (`BSEC_MAX_PROPERTY_BLOB_SIZE`).
+
+
+* 
+**State Blob Max Size:** 238 bytes (`BSEC_MAX_STATE_BLOB_SIZE`).
+
+
+* 
+**Max Physical Sensors:** 8 (`BSEC_MAX_PHYSICAL_SENSOR`).
+
+
+
+
+# ULP Plus Info:
+**ULP Plus** (Ultra Low Power Plus) is a special operation mode in the BSEC library designed to bridge the gap between the standard "Ultra Low Power" (ULP) mode and "Low Power" (LP) mode.
+
+In standard ULP mode, the sensor measures very infrequently (once every 300 seconds) to save battery. ULP Plus allows the host system to trigger an **extra measurement on demand** (MOD) between these scheduled 5-minute intervals without switching to a higher power mode permanently.
+
+### Key Characteristics
+
+* **Purpose:** Allows sporadic, immediate measurements (e.g., triggered by a user action like a button press or a sudden environmental event) while keeping the device in a deep sleep state for most of the time.
+* **Mechanism:** It is technically implemented as a "Measurement on Demand" (MOD). You subscribe to the feature by setting the sample rate to `BSEC_SAMPLE_RATE_ULP_MEASUREMENT_ON_DEMAND` (value `0.0f`).
+* **Context:** It is strictly an add-on to the ULP mode. You cannot use it if you are operating in LP (3s) or Continuous modes.
+
+### Usage & Implementation Details
+
+To use ULP Plus, you must adhere to specific timing constraints to prevent conflicts with the background ULP schedule.
+
+1. **Configuration:** You generally must use the **LP (3s) configuration file** (e.g., `generic_33v_3s_4d`) even if you intend to use ULP mode primarily. This allows the internal algorithm to handle the irregular "on-demand" timings that strictly periodic ULP configurations (300s) cannot handle.
+2. **Triggering:** To trigger a measurement, you update the subscription with the `BSEC_SAMPLE_RATE_ULP_MEASUREMENT_ON_DEMAND` sample rate.
+3. **Timing Constraints:**
+* **Minimum Interval:** You cannot trigger ULP Plus too frequently. There is a forced minimum wait time (typically 60 seconds) between measurements.
+* **Buffer Zone:** You cannot trigger a measurement close to a scheduled background ULP measurement. The system enforces a "no-go" zone (e.g., 60 seconds before or after a scheduled 300s tick) to prevent collisions.
+
+
+
+### Error Codes & Warnings
+
+The BSEC library returns specific warning codes if these timing rules are violated:
+
+* **`BSEC_W_SC_MODINNOULP`**: You attempted to trigger a measurement on demand (MOD), but the sensor is not currently in ULP mode (e.g., it is in LP or Continuous mode).
+* **`BSEC_W_SC_MODEXCEEDULPTIMELIMIT`**: The request was rejected because a standard ULP measurement just occurred or is about to occur (violating the buffer zone).
+* **`BSEC_W_SC_MODINSUFFICIENTWAITTIME`**: The request was rejected because not enough time has passed since the *last* ULP Plus measurement (violating the minimum interval frequency).

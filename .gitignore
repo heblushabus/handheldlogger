@@ -1,0 +1,25 @@
+# ESP-IDF
+/build/
+/sdkconfig
+/sdkconfig.old
+/managed_components/
+/dependencies.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# System
+.DS_Store
+Thumbs.db
+
+# PlatformIO (if applicable, though this looks like pure ESP-IDF now)
+.pio/
