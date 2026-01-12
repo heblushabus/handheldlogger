@@ -10,7 +10,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/time.h>
-// #include <time.h>
 
 #define BME68X_USE_FPU
 static const char *TAG = "main";
@@ -91,8 +90,9 @@ void app_main(void) {
   latest_data.valid = false;
   latest_data.is_bsec = false;
 
+  uint64_t diff;
 a:
-  uint64_t diff = getCurNs() - bme680_manager_get_next_call_ns();
+  diff = getCurNs() - bme680_manager_get_next_call_ns();
 
   if (diff > 2000000000LL)
     ESP_LOGW(TAG, "timing error, normal with first measurement");
@@ -137,8 +137,6 @@ a:
   // Calculate remaining time in microseconds for esp_sleep
   int64_t sleep_duration_us = (next_call_ns - now_ns) / 1000LL;
 
-  // Safety clamp - if calculated time is invalid or too short, force safe
-  // 10sec
   if (sleep_duration_us < 10000000) {
     ESP_LOGI(TAG,
              "Calculated sleep duration too short (%lld us), lightsleep %ds",
