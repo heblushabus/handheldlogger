@@ -2,13 +2,15 @@
 #include "common_data.c"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
+#include "freertos/FreeRTOS.h" // IWYU pragma: keep
+#include "freertos/projdefs.h"
 #include "freertos/task.h"
 #include "u8g2_manager.h"
 #include "vbat_driver.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <sys/time.h>
-#include <time.h>
+// #include <time.h>
 
 #define BME68X_USE_FPU
 static const char *TAG = "main";
@@ -29,10 +31,18 @@ void app_main(void) {
   esp_pm_config_t pm_config = {.max_freq_mhz = 80,
                                .min_freq_mhz = 40,
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
-                               .light_sleep_enable = true
+                               .light_sleep_enable = false
 #endif
   };
   ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
+  ESP_LOGI(TAG, "Initializing Display...");
+
+  gpio_reset_pin(15);
+  gpio_set_direction(15, GPIO_MODE_OUTPUT);
+  gpio_set_level(15, 0);
+
+  // Keep GPIO 18 high during light sleep
+  gpio_hold_en(15);
 
   // Initialize the Display manager (also initializes I2C)
   if (u8g2_manager_init() != ESP_OK) {
@@ -54,13 +64,6 @@ void app_main(void) {
   // Initialize the ADC driver
   ESP_ERROR_CHECK(vbat_driver_init());
 
-  gpio_reset_pin(18);
-  gpio_set_direction(18, GPIO_MODE_OUTPUT);
-  gpio_set_level(18, 0);
-
-  // Keep GPIO 18 low during light sleep
-  gpio_hold_en(18);
-
   // ... rest of the code ... (keeping user's init logic)
 
   // Initialize BME680
@@ -71,8 +74,10 @@ void app_main(void) {
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
       ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    ESP_ERROR_CHECK(nvs_flash_erase());
-    ret = nvs_flash_init();
+    u8g2_manager_print_status("NVS FAIL!");
+    while (1) {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
   }
   ESP_ERROR_CHECK(ret);
 
@@ -85,14 +90,15 @@ void app_main(void) {
 
   latest_data.valid = false;
   latest_data.is_bsec = false;
-// Try to get data with extended timeout (10s)
+
 a:
-  ESP_LOGI(TAG, "diff:%lld", getCurNs() - bme680_manager_get_next_call_ns());
-  if (getCurNs() >= bme680_manager_get_next_call_ns()) {
-    if (bme680_manager_run() == ESP_OK)
-      ESP_LOGI(TAG, "BSEC run good");
-  } else
-    ESP_LOGW(TAG, "yanlış uyuyon amınakodumun malı");
+  uint64_t diff = getCurNs() - bme680_manager_get_next_call_ns();
+
+  if (diff > 2000000000LL)
+    ESP_LOGW(TAG, "timing error, normal with first measurement");
+  else
+    ESP_LOGI(TAG, "diff:%lld", diff);
+  bme680_manager_run();
 
   if (latest_data.valid) {
     ESP_LOGI(TAG, "BSEC Data Acquired");
@@ -131,11 +137,13 @@ a:
   // Calculate remaining time in microseconds for esp_sleep
   int64_t sleep_duration_us = (next_call_ns - now_ns) / 1000LL;
 
-  // Safety clamp - if calculated time is invalid or too short, force safe 10sec
+  // Safety clamp - if calculated time is invalid or too short, force safe
+  // 10sec
   if (sleep_duration_us < 10000000) {
-    ESP_LOGE(TAG, "Calculated sleep duration too short (%lld us), forcing 2s",
-             sleep_duration_us);
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    ESP_LOGI(TAG,
+             "Calculated sleep duration too short (%lld us), lightsleep %ds",
+             sleep_duration_us, (sleep_duration_us / 1000) + 20);
+    vTaskDelay(pdMS_TO_TICKS((sleep_duration_us / 1000) + 33));
     goto a;
   }
 
