@@ -1,4 +1,5 @@
 #include "common_data.h"
 #include <stdbool.h>
 
-latest_data_t latest_data = {0};
+RTC_NOINIT_ATTR latest_data_t latest_data;
+RTC_NOINIT_ATTR rtc_bsec_state_container_t rtc_bsec_state;

@@ -1,3 +1,4 @@
+#include "common_data.h"
 #include "u8g2_manager.h" // Include header for display access
 
 #include "esp_attr.h"
@@ -30,34 +31,25 @@ static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_FAIL_BIT BIT1
 
 static void event_handler(void *arg, esp_event_base_t event_base,
-                          int32_t event_id, void *event_data)
-{
-  if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
-  {
+                          int32_t event_id, void *event_data) {
+  if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
     u8g2_manager_print_status("Connecting WiFi...");
     esp_wifi_connect();
-  }
-  else if (event_base == WIFI_EVENT &&
-           event_id == WIFI_EVENT_STA_DISCONNECTED)
-  {
-    if (s_retry_num < MAXIMUM_RETRY)
-    {
+  } else if (event_base == WIFI_EVENT &&
+             event_id == WIFI_EVENT_STA_DISCONNECTED) {
+    if (s_retry_num < MAXIMUM_RETRY) {
       char buf[32];
       snprintf(buf, sizeof(buf), "Retrying WiFi (%d)", s_retry_num + 1);
       u8g2_manager_print_status(buf);
       esp_wifi_connect();
       s_retry_num++;
-      ESP_LOGI(TAG, "retry to connect to the AP");
-    }
-    else
-    {
+      ESP_LOGW(TAG, "retry to connect to the AP");
+    } else {
       u8g2_manager_print_status("WiFi Failed!");
       xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
     }
-    ESP_LOGI(TAG, "connect to the AP fail");
-  }
-  else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
-  {
+    ESP_LOGW(TAG, "connect to the AP fail");
+  } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
     s_retry_num = 0;
@@ -68,8 +60,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
 
 // ...
 
-static void wifi_init_sta(void)
-{
+static void wifi_init_sta(void) {
   s_wifi_event_group = xEventGroupCreate();
 
   ESP_ERROR_CHECK(esp_netif_init());
@@ -101,37 +92,30 @@ static void wifi_init_sta(void)
   // Reduce TX power to avoid brownout
   ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(52)); // 52 * 0.25 = 13dBm
 
-  ESP_LOGI(TAG, "wifi_init_sta finished.");
+  ESP_LOGD(TAG, "wifi_init_sta finished.");
 
   EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
                                          WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
                                          pdFALSE, pdFALSE, portMAX_DELAY);
 
-  if (bits & WIFI_CONNECTED_BIT)
-  {
+  if (bits & WIFI_CONNECTED_BIT) {
     ESP_LOGI(TAG, "connected to ap SSID:%s password:%s", WIFI_SSID, WIFI_PASS);
-  }
-  else if (bits & WIFI_FAIL_BIT)
-  {
-    ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s", WIFI_SSID,
+  } else if (bits & WIFI_FAIL_BIT) {
+    ESP_LOGD(TAG, "Failed to connect to SSID:%s, password:%s", WIFI_SSID,
              WIFI_PASS);
-  }
-  else
-  {
+  } else {
     ESP_LOGE(TAG, "UNEXPECTED EVENT");
   }
 }
 
-static void initialize_sntp(void)
-{
+static void initialize_sntp(void) {
   ESP_LOGI(TAG, "Initializing SNTP");
   esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
   esp_sntp_setservername(0, "pool.ntp.org");
   esp_sntp_init();
 }
 
-static void obtain_time(void)
-{
+static void obtain_time(void) {
   u8g2_manager_print_status("Syncing Time...");
   // Wait for time to be set
   time_t now = 0;
@@ -139,26 +123,21 @@ static void obtain_time(void)
   int retry = 0;
   const int retry_count = 10;
   while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET &&
-         ++retry < retry_count)
-  {
+         ++retry < retry_count) {
     ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry,
              retry_count);
     vTaskDelay(2000 / portTICK_PERIOD_MS);
   }
-  if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED)
-  {
+  if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
     u8g2_manager_print_status("Time Synced!");
-  }
-  else
-  {
+  } else {
     u8g2_manager_print_status("Time Sync Failed");
   }
   time(&now);
   localtime_r(&now, &timeinfo);
 }
 
-esp_err_t wifi_time_manager_init(void)
-{
+esp_err_t wifi_time_manager_init(void) {
   // Check if we already have valid time (RTC maintained)
   time_t now;
   struct tm timeinfo;
@@ -167,8 +146,7 @@ esp_err_t wifi_time_manager_init(void)
 
   // If year is > 2024, we assume time is valid and we can skip WiFi.
   // tm_year is years since 1900. 2025 - 1900 = 125.
-  if (timeinfo.tm_year > (2024 - 1900))
-  {
+  if (timeinfo.tm_year > (2024 - 1900)) {
     ESP_LOGI(TAG, "RTC time is valid (Year: %d). Skipping WiFi Sync.",
              timeinfo.tm_year + 1900);
     setenv("TZ", "TRT-3", 1);
@@ -180,15 +158,17 @@ esp_err_t wifi_time_manager_init(void)
            timeinfo.tm_year + 1900);
 
   // Initialize NVS (Required for WiFi)
-  esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-      ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-  {
-    ESP_ERROR_CHECK(nvs_flash_erase());
-    ret = nvs_flash_init();
+  if (!nvs_active) {
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_LOGE(TAG, "NVS ERROR in wifi manager");
+      while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+      }
+    }
+    ESP_ERROR_CHECK(ret);
   }
-  ESP_ERROR_CHECK(ret);
-
   // Connect to WiFi
   wifi_init_sta();
 

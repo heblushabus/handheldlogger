@@ -2,6 +2,7 @@
 // #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "esp_check.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h" // IWYU pragma: keep
 #include "freertos/task.h"
@@ -97,7 +98,7 @@ static uint8_t u8x8_gpio_delay_cb(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int,
   return 1;
 }
 
-esp_err_t u8g2_manager_init(void) {
+esp_err_t i2c_init(void) {
   i2c_master_bus_config_t bus_config = {
       .i2c_port = I2C_MASTER_NUM,
       .sda_io_num = I2C_MASTER_SDA_IO,
@@ -106,9 +107,14 @@ esp_err_t u8g2_manager_init(void) {
       .glitch_ignore_cnt = 7,
       .flags.enable_internal_pullup = true,
   };
-
   ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &i2c_bus_handle), TAG,
                       "Failed to create I2C bus");
+
+  return ESP_OK;
+}
+
+esp_err_t u8g2_manager_init(void) {
+  i2c_init();
 
   u8g2_Setup_ssd1306_i2c_128x64_noname_f(&u8g2, U8G2_R0, u8x8_byte_i2c_cb,
                                          u8x8_gpio_delay_cb);

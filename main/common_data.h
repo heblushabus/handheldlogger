@@ -8,26 +8,39 @@
 #ifndef COMMON_DATA_H_
 #define COMMON_DATA_H_
 
-
+#include "esp_attr.h"
 #include <stdbool.h>
+#include <stdint.h>
 // Unified structure to hold latest sensor data
-typedef struct
-{
-    float temperature;
-    float humidity;
-    float pressure;
-    float iaq;
-    int iaq_accuracy;
-    float gas_resistance;
-    int stabilization_status;
-    int run_in_status;
-    int battery_voltage_mv; // Battery voltage in millivolts
-    bool is_bsec;
-    bool valid;             // Flag to indicate if data is populated
+typedef struct {
+  float temperature;
+  float humidity;
+  float pressure;
+  float iaq;
+  int iaq_accuracy;
+  float gas_resistance;
+  int stabilization_status;
+  int run_in_status;
+  int battery_voltage_mv; // Battery voltage in millivolts
+  bool is_bsec;
+  bool valid; // Flag to indicate if data is populated
 } latest_data_t;
 
 // Declare global instance if needed, or just the type
 // For this request, we'll define the type here and usage in managers.
-extern latest_data_t latest_data;
+RTC_NOINIT_ATTR extern latest_data_t latest_data;
+
+// Magic number to check if RTC memory contains valid BSEC state
+#define RTC_BSEC_MAGIC 0x42534543 // "BSEC" in hex
+#define BSEC_STATE_LEN 238
+
+typedef struct {
+  uint32_t magic;                // 4 bytes magic number
+  uint8_t state[BSEC_STATE_LEN]; // BSEC state blob
+} rtc_bsec_state_container_t;
+
+RTC_NOINIT_ATTR extern rtc_bsec_state_container_t rtc_bsec_state;
+
+extern bool nvs_active;
 
 #endif /* COMMON_DATA_H_ */

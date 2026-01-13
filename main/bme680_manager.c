@@ -21,9 +21,7 @@ static void bsec_callback(const bme68x_data_t data,
                           const bsec_outputs_t outputs, bsec2_t bsec2) {
   if (outputs.n_outputs > 0) {
     latest_outputs = outputs;
-    if (bme680_manager_read() == ESP_OK) {
-      ESP_LOGI(TAG, "BSEC Data Acquired");
-    } else
+    if (bme680_manager_read() != ESP_OK)
       ESP_LOGW(TAG, "BSEC read error");
   } else {
     // If BSEC has no new outputs (e.g. during stabilization), use raw data
@@ -175,6 +173,16 @@ void bme68x_load_state(bsec2_t *bsec) {
     return;
   }
 
+  if (rtc_bsec_state.magic == RTC_BSEC_MAGIC) {
+    if (!bsec2_set_state(bsec, rtc_bsec_state.state)) {
+      ESP_LOGE(TAG, "Failed to set BSEC state");
+    } else {
+      ESP_LOGI(TAG, "BSEC state loaded from RTC (Size: %d)",
+               sizeof(rtc_bsec_state.state));
+    }
+    return;
+  }
+
   nvs_handle_t my_handle;
   esp_err_t err;
 
@@ -218,6 +226,10 @@ void bme68x_save_state(bsec2_t *bsec) {
     ESP_LOGE(TAG, "Failed to get BSEC state");
     return;
   }
+  if (latest_data.iaq_accuracy < 2 || latest_data.iaq_accuracy == 0) {
+    ESP_LOGW(TAG, "skipping nvs save");
+    return;
+  }
 
   // Open
   err = nvs_open("bsec_storage", NVS_READWRITE, &my_handle);
@@ -235,7 +247,24 @@ void bme68x_save_state(bsec2_t *bsec) {
   nvs_close(my_handle);
 }
 
+void bme68x_save_rtc_state(bsec2_t *bsec) {
+  if (!is_time_synced()) {
+    ESP_LOGW(TAG, "Time not synced. Skipping BSEC state save.");
+    return;
+  }
+
+  uint8_t bsec_state[BSEC_MAX_STATE_BLOB_SIZE];
+  if (!bsec2_get_state(bsec, bsec_state)) {
+    ESP_LOGE(TAG, "Failed to get BSEC state");
+    return;
+  }
+
+  rtc_bsec_state.magic = RTC_BSEC_MAGIC;
+  memcpy(rtc_bsec_state.state, bsec_state, sizeof(bsec_state));
+}
+
 void bme680_manager_save_state(void) { bme68x_save_state(&bsec); }
+void bme680_manager_save_rtc_state(void) { bme68x_save_rtc_state(&bsec); }
 
 int64_t bme680_manager_get_next_call_ms(void) {
   return bsec.bme_conf.next_call / 1000000;

@@ -10,6 +10,13 @@ extern "C" {
 #endif
 
 /**
+ * @brief Initialize the I2C bus
+ *
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t i2c_init(void);
+
+/**
  * @brief Initialize the U8G2 display
  *
  * @return esp_err_t ESP_OK on success
