@@ -50,6 +50,18 @@ void smartDelay(int64_t duration) {
   loopcnt++;
   bme680_manager_save_rtc_state();
   if (loopcnt >= 6) {
+    if (!nvs_active) {
+      nvs_active = 1;
+      esp_err_t ret = nvs_flash_init();
+      if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+          ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGE(TAG, "NVS FAIL!");
+        while (1) {
+          vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+      }
+      ESP_ERROR_CHECK(ret);
+    }
     bme680_manager_save_state();
     loopcnt = 0;
   }
