@@ -22,7 +22,7 @@ static const char *TAG = "main";
 #include "wifi_time_manager.h"
 
 RTC_FAST_ATTR int64_t next_call_ns;
-int8_t loopcnt;
+RTC_FAST_ATTR int8_t loopcnt;
 bool nvs_active = 0;
 
 int64_t getCurNs() {
