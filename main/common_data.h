@@ -43,4 +43,37 @@ RTC_NOINIT_ATTR extern rtc_bsec_state_container_t rtc_bsec_state;
 
 extern bool nvs_active;
 
+typedef struct __attribute__((packed)) {
+  uint32_t timestamp : 32; // unix time in secs
+
+  uint32_t pressure : 17;
+  uint32_t temp : 13;    // mem:0-8191 real: -20,95-60,95
+  uint32_t accuracy : 2; // 1 byte: 0-3
+
+  uint32_t humidity : 10; // mem:0-1024 real: 0,0-102,4
+  uint32_t iaq : 9;       // real:0-512
+  uint32_t co2 : 13;      // real: 0-8192
+
+  uint32_t battery : 9; // mem:0-512 real 0,00-5,12
+  uint32_t _pad1 : 23;
+} buf_ulp_item;
+
+RTC_FAST_ATTR extern buf_ulp_item buf_ulp[110];
+
+typedef struct __attribute__((packed)) {
+  uint32_t pressure : 17;
+  uint32_t temp : 13;    // mem:0-8191 real: -20,95-60,95
+  uint32_t accuracy : 2; // 1 byte: 0-3
+
+  uint32_t humidity : 10; // mem:0-1024 real: 0,0-102,4
+  uint32_t iaq : 9;       // real:0-512
+  uint32_t co2 : 13;      // real: 0-8192
+
+  uint32_t battery : 9; // mem:0-512 real 0,00-5,12
+  uint32_t _pad1 : 23;
+} buf_lp_item;
+
+extern buf_lp_item buf_lp[110];
+extern buf_lp_item buf_lp10[110];
+
 #endif /* COMMON_DATA_H_ */
